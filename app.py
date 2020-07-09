@@ -74,7 +74,7 @@ def main():
     case_change = round(cf['Direct Filing'].sum() - nf['Direct Filing'].sum())
 
     # Explanation text
-    st.write('Compared to a baseline 12 month estimate of', round(nf['Direct Filing'].sum()),
+    st.write('Compared to a baseline 12 month estimate of', round(nf[nf['Prediction'] == 'Forecasted']['Direct Filing'].sum()),
             'a',hour,'percent change in referred cases', 'would', inc_dec, 'the amount of narcotic cases in Cook County by', case_change, '.')
 
 
