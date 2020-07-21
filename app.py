@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import plotly.express as px
+import altair as alt
 ### Data URL
 
 
@@ -12,7 +12,6 @@ A tool to generate policy scenarios and their impact across system points.
 """
 
 def main():
-
     ### Referral Leverls
     # Set up sidebar title
     st.sidebar.markdown('# Policy Levers')
@@ -22,28 +21,27 @@ def main():
 
     st.sidebar.markdown('### Narcotic Referrals')
 
-    #add slider
-    hour = st.sidebar.slider("Percent Increase or Decrease",  -100.0, 100.0, (0.0))
+    # add slider
+    hour = st.sidebar.slider("Percent Increase or Decrease", -100.0, 100.0, (0.0))
 
-    #add percent change calc
+    # add percent change calc
     hour_calc = (hour + 100) / 100
-
 
     ### Conviction Lever
     st.sidebar.markdown('### Conviction Rate')
 
-    #add number input to sidebar
+    # add number input to sidebar
     co_rate = st.sidebar.number_input('Change Conviction Rate', min_value=0.0, max_value=1.0, value=.62)
 
     ### Prison and Jail Lever
     st.sidebar.markdown('### Prison and Jail Rate')
-    #add number input to sidebar
+    # add number input to sidebar
     snt_rate = st.sidebar.number_input('Change Jail and Prison Rate', min_value=0.0, max_value=1.0, value=.58)
 
     # conditional text
     def conditional_swithc(num):
 
-        if num >=1:
+        if num >= 1:
             inc_dec = "increase"
         else:
             inc_dec = "decrease"
@@ -55,35 +53,44 @@ def main():
     # get narcotic data
     nf = get_data()
 
-    #get co data
+    # get co data
     new_data = get_co_data()
 
-    #rename df
-    co = new_data
+    # rename df
+    co = pd.DataFrame(new_data.sum()).transpose()
 
-    #subset
+    # subset
     cf = nf[['month', 'Direct Filing', 'Prediction']]
 
     """
     ### Narcotic Cases Forecast
     """
-    #dynamic series calculation
-    cf['Direct Filing'] = np.where(cf['Prediction'] == 'Forecasted',cf['Direct Filing'] * hour_calc, cf['Direct Filing'])
+    # dynamic series calculation
+    cf['Direct Filing'] = np.where(cf['Prediction'] == 'Forecasted', cf['Direct Filing'] * hour_calc,
+                                   cf['Direct Filing'])
 
     # change in cases
     case_change = round(cf['Direct Filing'].sum() - nf['Direct Filing'].sum())
 
     # Explanation text
-    st.write('Compared to a baseline 12 month estimate of', round(nf[nf['Prediction'] == 'Forecasted']['Direct Filing'].sum()),
-            'a',hour,'percent change in referred cases', 'would', inc_dec, 'the amount of narcotic cases in Cook County by', case_change, '.')
+    st.write('Compared to a baseline 12 month estimate of',
+             round(nf[nf['Prediction'] == 'Forecasted']['Direct Filing'].sum()),
+             'a', hour, 'percent change in referred cases', 'would', inc_dec,
+             'the amount of narcotic cases in Cook County by', case_change, '.')
 
+    # set up colors
+    domain = ['Baseline', 'Forecasted']
+    range_ = ['#181818', '#981e4d']
 
-    #diplay chart
-    f = px.line(cf, x="month", y="Direct Filing", color='Prediction')
-    f.update_xaxes(title="Predicted Narcotics")
-    f.update_yaxes(title="Month")
-    f.update_yaxes(showgrid=False, zeroline=False)
-    st.plotly_chart(f, use_container_width=True)
+    forecast_line = alt.Chart(cf, height=400).mark_line(point=True).encode(
+        x='month',
+        y='Direct Filing',
+        color=alt.Color('Prediction', scale=alt.Scale(domain=domain, range=range_)),
+        tooltip=['month', 'Direct Filing']
+    ).interactive().configure_axisX(
+        grid=False)
+
+    st.altair_chart(forecast_line, use_container_width=True)
 
     """
     ### Convicted Cases Forecast
@@ -95,35 +102,52 @@ def main():
 
     # Explanation text
     st.write('Compared to a baseline 12 month estimate of', round(co['convict_baseline'].sum()),
-            'this', 'would ' 'see the amount of convicted narcotic cases change in Cook County by', round(convict_change), '.')
+             'this', 'would ' 'see the amount of convicted narcotic cases change in Cook County by',
+             round(convict_change), '.')
 
-    #tranform data
-    co_t = co[['convict_baseline','convict_calc']]
+    # tranform data
+    co_t = pd.DataFrame(co[['convict_baseline', 'convict_calc']].sum().T).reset_index().rename(
+        columns={'index': 'Category', 0: 'Number of Convictions'})
 
-    #diplay chart
-    cf = px.bar(co[['convict_calc']], x='convict_calc')
-    cf.update_yaxes(title="Month")
-    st.plotly_chart(cf, use_container_width=True)
+    convict_bar = alt.Chart(co_t, height=400).mark_bar(size=150).encode(
+        x='Category',
+        y='Number of Convictions',
+        color=alt.condition(alt.datum.Category == 'convict_calc',
+                            alt.value('#981e4d'),
+                            alt.value('#181818'), legend=alt.Legend(title="Species by color")),
+        tooltip=['Category', 'Number of Convictions']
+    ).interactive()
 
+    st.altair_chart(convict_bar, use_container_width=True)
 
     """
-    ### Sentenced Cases Forecast
+    ### Custodial Sentenced Cases Forecast
     """
 
     co['sent_calc'] = ((co['Direct Filing'] * hour_calc) * co_rate) * snt_rate
-
 
     sent_change = co['sent_calc'].sum() - co['sent_baseline'].sum()
 
     # Explanation text
     st.write('Compared to a baseline 12 month estimate of', round(co['sent_baseline'].sum()),
-            'this', 'would ' 'see the amount of narcotic cases sentenced to jail or prison change in Cook County by', round(sent_change), '.')
+             'this', 'would ' 'see the amount of narcotic cases sentenced to jail or prison change in Cook County by',
+             round(sent_change), '.')
 
+    # tranform data
+    co_sent = pd.DataFrame(co[['sent_baseline', 'sent_calc']].sum().T).reset_index().rename(
+        columns={'index': 'Category', 0: 'Number of Custodial Sentences'})
 
-    #diplay chart
-    cs = px.bar(co, x='sent_calc')
-    cs.update_yaxes(title="Month")
-    st.plotly_chart(cs, use_container_width=True)
+    # sent bar
+    sent_bar = alt.Chart(co_sent, height=400).mark_bar(size=150).encode(
+        x='Category',
+        y='Number of Custodial Sentences',
+        color=alt.condition(alt.datum.Category == 'sent_calc',
+                            alt.value('#981e4d'),
+                            alt.value('#181818'), legend=alt.Legend(title="Species by color")),
+        tooltip=['Category', 'Number of Custodial Sentences']
+    ).interactive()
+
+    st.altair_chart(sent_bar, use_container_width=True)
 
 # get narcotic referral predictions
 @st.cache
